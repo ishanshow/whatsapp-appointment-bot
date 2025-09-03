@@ -1378,7 +1378,10 @@ class AppointmentBot {
                 updated_at: new Date().toISOString()
             });
 
-            await whatsappService.sendAppointmentCancelled(phoneNumber, appointment);
+            await whatsappService.sendAppointmentCancelled(phoneNumber, {
+                date: appointment.appointment_date,
+                time: appointment.appointment_time
+            });
             // Clear conversation state to complete the conversation
             await this.clearConversationState(phoneNumber);
 
@@ -1442,7 +1445,10 @@ class AppointmentBot {
                 updated_at: new Date().toISOString()
             });
 
-            await whatsappService.sendAppointmentRescheduled(phoneNumber, originalAppointment, newAppointmentData);
+            await whatsappService.sendAppointmentRescheduled(phoneNumber, {
+                date: originalAppointment.appointment_date,
+                time: originalAppointment.appointment_time
+            }, newAppointmentData);
             // Clear conversation state to complete the conversation
             await this.clearConversationState(phoneNumber);
 
