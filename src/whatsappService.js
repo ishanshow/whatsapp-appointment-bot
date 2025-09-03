@@ -2,12 +2,15 @@ const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const moment = require('moment');
 const logger = require('../utils/logger');
+const EventEmitter = require('events');
 
 class WhatsAppService {
     constructor() {
         this.client = null;
         this.isReady = false;
         this.messageHandler = null;
+        this.currentQR = null;
+        this.eventEmitter = new EventEmitter();
         this.initialize();
     }
 
@@ -47,6 +50,10 @@ class WhatsAppService {
                 console.log('Please scan this QR code with your WhatsApp mobile app:');
                 qrcode.generate(qr, { small: true });
                 console.log('\n📱 Make sure to scan the QR code within 45 seconds!\n');
+
+                // Store and emit QR code for web interface
+                this.currentQR = qr;
+                this.eventEmitter.emit('qr', qr);
             });
 
             this.client.on('ready', () => {
@@ -59,6 +66,20 @@ class WhatsAppService {
             this.client.on('authenticated', () => {
                 console.log('🔐 WhatsApp client authenticated successfully');
                 logger.info('WhatsApp client authenticated');
+
+                // Emit authentication event and clear QR code
+                this.currentQR = null;
+                this.eventEmitter.emit('authenticated');
+            });
+
+            this.client.on('ready', () => {
+                console.log('✅ WhatsApp client is ready!');
+                this.isReady = true;
+                logger.info('WhatsApp client connected and ready');
+                console.log('📱 You can now send messages to test the bot!');
+
+                // Emit ready event
+                this.eventEmitter.emit('ready');
             });
 
             this.client.on('loading_screen', (percent, message) => {
@@ -68,12 +89,19 @@ class WhatsAppService {
             this.client.on('auth_failure', (msg) => {
                 console.error('❌ WhatsApp authentication failed:', msg);
                 logger.error('WhatsApp authentication failed', { message: msg });
+
+                // Emit error event
+                this.eventEmitter.emit('auth_failure', msg);
             });
 
             this.client.on('disconnected', (reason) => {
                 console.log('🔌 WhatsApp client disconnected:', reason);
                 logger.warn('WhatsApp client disconnected', { reason });
                 this.isReady = false;
+
+                // Emit disconnected event
+                this.eventEmitter.emit('disconnected', reason);
+
                 // Attempt to reconnect after disconnection
                 setTimeout(() => {
                     if (!this.isReady) {
@@ -110,6 +138,10 @@ class WhatsAppService {
 
     setMessageHandler(handler) {
         this.messageHandler = handler;
+    }
+
+    getEventEmitter() {
+        return this.eventEmitter;
     }
 
     async checkConnectionHealth() {
