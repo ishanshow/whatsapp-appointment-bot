@@ -2,7 +2,6 @@ const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const moment = require('moment');
 const logger = require('../utils/logger');
-const EventEmitter = require('events');
 
 class WhatsAppService {
     constructor() {
@@ -10,7 +9,6 @@ class WhatsAppService {
         this.isReady = false;
         this.messageHandler = null;
         this.currentQR = null;
-        this.eventEmitter = new EventEmitter();
         this.initialize();
     }
 
@@ -49,11 +47,16 @@ class WhatsAppService {
                 console.log('\n🚀 WhatsApp QR Code:');
                 console.log('Please scan this QR code with your WhatsApp mobile app:');
                 qrcode.generate(qr, { small: true });
-                console.log('\n📱 Make sure to scan the QR code within 45 seconds!\n');
+                console.log('\n📱 Make sure to scan the QR code within 45 seconds!');
+                console.log('🌐 Or visit: http://localhost:3000/qr\n');
 
-                // Store and emit QR code for web interface
+                // Store QR code for web endpoint
                 this.currentQR = qr;
-                this.eventEmitter.emit('qr', qr);
+
+                // Update server state
+                if (global.updateQRState) {
+                    global.updateQRState(qr, false);
+                }
             });
 
             this.client.on('ready', () => {
@@ -67,9 +70,13 @@ class WhatsAppService {
                 console.log('🔐 WhatsApp client authenticated successfully');
                 logger.info('WhatsApp client authenticated');
 
-                // Emit authentication event and clear QR code
+                // Clear QR code - authentication complete
                 this.currentQR = null;
-                this.eventEmitter.emit('authenticated');
+
+                // Update server state - authentication successful
+                if (global.updateQRState) {
+                    global.updateQRState(null, true);
+                }
             });
 
             this.client.on('ready', () => {
@@ -77,9 +84,12 @@ class WhatsAppService {
                 this.isReady = true;
                 logger.info('WhatsApp client connected and ready');
                 console.log('📱 You can now send messages to test the bot!');
+                console.log('🌐 Visit: http://localhost:3000/qr to see authentication status');
 
-                // Emit ready event
-                this.eventEmitter.emit('ready');
+                // Update server state - fully ready
+                if (global.updateQRState) {
+                    global.updateQRState(null, true);
+                }
             });
 
             this.client.on('loading_screen', (percent, message) => {
@@ -89,9 +99,12 @@ class WhatsAppService {
             this.client.on('auth_failure', (msg) => {
                 console.error('❌ WhatsApp authentication failed:', msg);
                 logger.error('WhatsApp authentication failed', { message: msg });
+                this.isReady = false;
 
-                // Emit error event
-                this.eventEmitter.emit('auth_failure', msg);
+                // Update server state - authentication failed
+                if (global.updateQRState) {
+                    global.updateQRState(null, false);
+                }
             });
 
             this.client.on('disconnected', (reason) => {
@@ -99,8 +112,10 @@ class WhatsAppService {
                 logger.warn('WhatsApp client disconnected', { reason });
                 this.isReady = false;
 
-                // Emit disconnected event
-                this.eventEmitter.emit('disconnected', reason);
+                // Update server state - disconnected
+                if (global.updateQRState) {
+                    global.updateQRState(null, false);
+                }
 
                 // Attempt to reconnect after disconnection
                 setTimeout(() => {
@@ -140,8 +155,21 @@ class WhatsAppService {
         this.messageHandler = handler;
     }
 
-    getEventEmitter() {
-        return this.eventEmitter;
+    getCurrentState() {
+        return {
+            isReady: this.isReady,
+            currentQR: this.currentQR
+        };
+    }
+
+    async isAuthenticated() {
+        try {
+            if (!this.client) return false;
+            const state = await this.client.getState();
+            return state === 'CONNECTED' || state === 'OPENING';
+        } catch (error) {
+            return false;
+        }
     }
 
     async checkConnectionHealth() {

@@ -54,357 +54,97 @@ app.get('/health', (req, res) => {
     res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
-// QR Code endpoint - serves HTML page for QR scanning
+// Simple QR Code endpoint - displays QR code in plain text
 app.get('/qr', (req, res) => {
-    const qrHtml = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WhatsApp QR Code Authentication</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #25D366, #128C7E);
-            margin: 0;
-            padding: 0;
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .container {
-            background: white;
-            border-radius: 20px;
-            padding: 40px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.1);
-            text-align: center;
-            max-width: 400px;
-            width: 90%;
-        }
-        .logo {
-            width: 80px;
-            height: 80px;
-            background: #25D366;
-            border-radius: 20px;
-            margin: 0 auto 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 36px;
-            color: white;
-        }
-        h1 {
-            color: #333;
-            margin-bottom: 10px;
-            font-size: 24px;
-        }
-        .subtitle {
-            color: #666;
-            margin-bottom: 30px;
-            font-size: 16px;
-        }
-        .qr-container {
-            margin: 30px 0;
-            padding: 20px;
-            background: #f8f9fa;
-            border-radius: 15px;
-            border: 2px dashed #e9ecef;
-        }
-        .qr-placeholder {
-            color: #666;
-            font-size: 16px;
-            margin-bottom: 20px;
-        }
-        #qr-code {
-            max-width: 100%;
-            height: auto;
-            border-radius: 10px;
-            display: none;
-        }
-        .status {
-            margin-top: 20px;
-            padding: 15px;
-            border-radius: 10px;
-            font-weight: 500;
-        }
-        .status.loading {
-            background: #fff3cd;
-            color: #856404;
-            border: 1px solid #ffeaa7;
-        }
-        .status.success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-        .status.error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-        .instructions {
-            background: #e3f2fd;
-            padding: 20px;
-            border-radius: 10px;
-            margin-top: 20px;
-            text-align: left;
-        }
-        .instructions h3 {
-            margin-top: 0;
-            color: #1976d2;
-        }
-        .instructions ol {
-            margin: 10px 0 0 20px;
-            padding: 0;
-        }
-        .instructions li {
-            margin-bottom: 8px;
-            color: #333;
-        }
-        .refresh-btn {
-            background: #25D366;
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 25px;
-            cursor: pointer;
-            font-size: 16px;
-            margin-top: 20px;
-            transition: background 0.3s;
-        }
-        .refresh-btn:hover {
-            background: #128C7E;
-        }
-        .refresh-btn:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="logo">📱</div>
-        <h1>WhatsApp Authentication</h1>
-        <p class="subtitle">Scan the QR code with your WhatsApp mobile app</p>
+    res.setHeader('Content-Type', 'text/plain');
 
-        <div class="qr-container">
-            <div id="qr-status" class="qr-placeholder">Generating QR code...</div>
-            <img id="qr-code" alt="QR Code" />
-        </div>
+    if (isAuthenticated) {
+        res.send(`
+🚀 WhatsApp Authentication Status
+================================
 
-        <div id="status-message" class="status loading">
-            🔄 Initializing WhatsApp connection...
-        </div>
+✅ AUTHENTICATION SUCCESSFUL!
 
-        <div class="instructions">
-            <h3>📋 Instructions:</h3>
-            <ol>
-                <li>Open WhatsApp on your phone</li>
-                <li>Go to Settings → Linked Devices</li>
-                <li>Tap "Link a Device"</li>
-                <li>Scan the QR code above</li>
-            </ol>
-        </div>
+Your WhatsApp bot is now connected and ready to use.
 
-        <button id="refresh-btn" class="refresh-btn" onclick="refreshQR()">🔄 Refresh QR Code</button>
-    </div>
+📱 You can now send messages to test the bot functionality.
 
-    <script>
-        let eventSource = null;
-        let isAuthenticated = false;
+🔄 To reconnect or generate a new QR code, restart the server.
 
-        function initEventSource() {
-            if (eventSource) {
-                eventSource.close();
-            }
+================================
+        `);
+        return;
+    }
 
-            eventSource = new EventSource('/qr/events');
+    if (currentQR) {
+        // Generate ASCII QR code like the terminal does
+        const qrcode = require('qrcode-terminal');
+        let qrOutput = '';
 
-            eventSource.onmessage = function(event) {
-                const data = JSON.parse(event.data);
-
-                if (data.type === 'qr') {
-                    displayQRCode(data.qr);
-                } else if (data.type === 'authenticated') {
-                    showAuthenticated();
-                } else if (data.type === 'error') {
-                    showError(data.message);
-                } else if (data.type === 'ready') {
-                    updateStatus('✅ WhatsApp is ready! You can close this page.', 'success');
-                }
-            };
-
-            eventSource.onerror = function() {
-                console.log('EventSource error, retrying in 3 seconds...');
-                setTimeout(initEventSource, 3000);
-            };
-        }
-
-        function displayQRCode(qrData) {
-            const qrImage = document.getElementById('qr-code');
-            const qrStatus = document.getElementById('qr-status');
-            const statusMessage = document.getElementById('status-message');
-
-            if (qrData) {
-                // Generate QR code image URL using a QR code service
-                qrImage.src = \`https://api.qrserver.com/v1/create-qr-code/?size=256x256&data=\${encodeURIComponent(qrData)}\`;
-                qrImage.style.display = 'block';
-                qrStatus.style.display = 'none';
-                statusMessage.textContent = '📱 Scan the QR code with WhatsApp';
-                statusMessage.className = 'status';
-                document.getElementById('refresh-btn').disabled = false;
-            } else {
-                qrImage.style.display = 'none';
-                qrStatus.textContent = 'Generating QR code...';
-                qrStatus.style.display = 'block';
-                statusMessage.textContent = '🔄 Generating QR code...';
-                statusMessage.className = 'status loading';
-            }
-        }
-
-        function showAuthenticated() {
-            isAuthenticated = true;
-            const statusMessage = document.getElementById('status-message');
-            statusMessage.textContent = '✅ Authentication successful! WhatsApp is connecting...';
-            statusMessage.className = 'status success';
-            document.getElementById('refresh-btn').disabled = true;
-
-            // Close the page after successful authentication
-            setTimeout(() => {
-                window.close();
-            }, 3000);
-        }
-
-        function showError(message) {
-            const statusMessage = document.getElementById('status-message');
-            statusMessage.textContent = \`❌ \${message}\`;
-            statusMessage.className = 'status error';
-            document.getElementById('refresh-btn').disabled = false;
-        }
-
-        function updateStatus(message, type = '') {
-            const statusMessage = document.getElementById('status-message');
-            statusMessage.textContent = message;
-            if (type) {
-                statusMessage.className = \`status \${type}\`;
-            }
-        }
-
-        function refreshQR() {
-            if (isAuthenticated) return;
-
-            document.getElementById('refresh-btn').disabled = true;
-            updateStatus('🔄 Refreshing QR code...', 'loading');
-
-            fetch('/qr/refresh', { method: 'POST' })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        updateStatus('🔄 Generating new QR code...', 'loading');
-                    } else {
-                        showError(data.message || 'Failed to refresh QR code');
-                    }
-                })
-                .catch(error => {
-                    showError('Failed to refresh QR code');
-                    console.error('Refresh error:', error);
-                })
-                .finally(() => {
-                    setTimeout(() => {
-                        document.getElementById('refresh-btn').disabled = false;
-                    }, 2000);
-                });
-        }
-
-        // Initialize when page loads
-        window.onload = function() {
-            initEventSource();
+        // Capture the QR code output
+        const originalWrite = process.stdout.write;
+        process.stdout.write = (chunk) => {
+            qrOutput += chunk.toString();
         };
 
-        // Cleanup on page unload
-        window.onbeforeunload = function() {
-            if (eventSource) {
-                eventSource.close();
-            }
-        };
-    </script>
-</body>
-</html>`;
-    res.send(qrHtml);
+        qrcode.generate(currentQR, { small: true });
+
+        // Restore original stdout
+        process.stdout.write = originalWrite;
+
+        res.send(`
+🚀 WhatsApp QR Code Authentication
+==================================
+
+📱 Please scan this QR code with your WhatsApp mobile app:
+
+${qrOutput}
+
+📋 Instructions:
+1. Open WhatsApp on your phone
+2. Go to Settings → Linked Devices
+3. Tap "Link a Device"
+4. Scan the QR code above
+
+⏰ Make sure to scan within 45 seconds!
+
+🔄 Refresh this page if the QR code expires.
+
+==================================
+        `);
+    } else {
+        res.send(`
+🚀 WhatsApp Authentication Status
+==================================
+
+🔄 Generating QR code...
+
+Please wait while we initialize the WhatsApp connection.
+
+🔄 Refresh this page in a few seconds.
+
+==================================
+        `);
+    }
 });
 
-// Server-Sent Events endpoint for QR code updates
-let qrClients = [];
+// Global variables for QR state
 let currentQR = null;
 let isAuthenticated = false;
 
-app.get('/qr/events', (req, res) => {
-    // Set headers for Server-Sent Events
-    res.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Cache-Control',
-    });
-
-    // Send current state if available
-    if (currentQR && !isAuthenticated) {
-        res.write(`data: ${JSON.stringify({ type: 'qr', qr: currentQR })}\n\n`);
-    } else if (isAuthenticated) {
-        res.write(`data: ${JSON.stringify({ type: 'authenticated' })}\n\n`);
+// Function to update server QR state
+function updateQRState(qr = null, authenticated = null) {
+    if (qr !== null) {
+        currentQR = qr;
     }
-
-    // Add this client to the list
-    qrClients.push(res);
-
-    // Remove client when connection closes
-    req.on('close', () => {
-        qrClients = qrClients.filter(client => client !== res);
-    });
-});
-
-// Function to broadcast QR updates to all clients
-function broadcastQRUpdate(type, data = null) {
-    const message = JSON.stringify({ type, ...data });
-    qrClients.forEach(client => {
-        try {
-            client.write(`data: ${message}\n\n`);
-        } catch (error) {
-            // Remove broken clients
-            qrClients = qrClients.filter(c => c !== client);
-        }
-    });
+    if (authenticated !== null) {
+        isAuthenticated = authenticated;
+    }
+    console.log(`🔄 QR State updated - QR: ${currentQR ? 'Available' : 'None'}, Auth: ${isAuthenticated ? 'Yes' : 'No'}`);
 }
 
-// QR refresh endpoint
-app.post('/qr/refresh', (req, res) => {
-    try {
-        if (isAuthenticated) {
-            return res.json({ success: false, message: 'Already authenticated' });
-        }
-
-        // Reset QR state
-        currentQR = null;
-        broadcastQRUpdate('qr', { qr: null });
-
-        // Trigger QR regeneration by reinitializing WhatsApp client
-        const whatsappService = require('./whatsappService');
-        if (whatsappService.client && !whatsappService.isReady) {
-            console.log('🔄 Refreshing QR code...');
-            whatsappService.client.initialize().catch(error => {
-                console.error('❌ Failed to refresh QR code:', error.message);
-            });
-        }
-
-        res.json({ success: true });
-    } catch (error) {
-        console.error('Error refreshing QR code:', error.message);
-        res.status(500).json({ success: false, message: 'Failed to refresh QR code' });
-    }
-});
+// Export the update function for WhatsApp service to use
+global.updateQRState = updateQRState;
 
 // Google Calendar authentication health check
 app.get('/health/calendar', async (req, res) => {
@@ -465,32 +205,24 @@ whatsappService.setMessageHandler(async (from, message, fullMessage) => {
     }
 });
 
-// Set up WhatsApp event listeners for QR broadcasting
-const whatsappEmitter = whatsappService.getEventEmitter();
-whatsappEmitter.on('qr', (qr) => {
-    currentQR = qr;
-    isAuthenticated = false;
-    broadcastQRUpdate('qr', { qr });
-});
+// Initialize QR state based on current WhatsApp state
+async function initializeQRState() {
+    const currentState = whatsappService.getCurrentState();
 
-whatsappEmitter.on('authenticated', () => {
-    isAuthenticated = true;
-    currentQR = null;
-    broadcastQRUpdate('authenticated');
-});
+    // Check if WhatsApp is actually authenticated
+    try {
+        const authenticated = await whatsappService.isAuthenticated();
+        console.log(`🔍 WhatsApp authentication state: ${authenticated ? 'Authenticated' : 'Not authenticated'}`);
 
-whatsappEmitter.on('ready', () => {
-    broadcastQRUpdate('ready');
-});
+        // Update server state using the global function
+        updateQRState(currentState.currentQR, authenticated);
+    } catch (error) {
+        console.log('⚠️ Could not determine WhatsApp authentication state:', error.message);
+        updateQRState(currentState.currentQR, currentState.isReady);
+    }
+}
 
-whatsappEmitter.on('auth_failure', (msg) => {
-    broadcastQRUpdate('error', { message: `Authentication failed: ${msg}` });
-});
-
-whatsappEmitter.on('disconnected', (reason) => {
-    isAuthenticated = false;
-    broadcastQRUpdate('error', { message: `Disconnected: ${reason}` });
-});
+// WhatsApp will update the global state variables directly
 
 // Google OAuth initiation
 app.get('/auth/google', (req, res) => {
@@ -597,17 +329,20 @@ async function startServer() {
         // Initialize the appointment bot
         await appointmentBot.init();
 
+        // Initialize QR state
+        await initializeQRState();
+
         // Start the server
         app.listen(PORT, () => {
             console.log(`🚀 Server running on port ${PORT}`);
             console.log(`📱 WhatsApp: Connected via whatsapp-web.js (QR code authentication)`);
             console.log(`❤️  Health check: http://localhost:${PORT}/health`);
             console.log(`📅 Calendar auth health: http://localhost:${PORT}/health/calendar`);
-            console.log(`📱 QR Code interface: http://localhost:${PORT}/qr`);
+            console.log(`📱 QR Code: http://localhost:${PORT}/qr (plain text)`);
 
             console.log('\n📱 WhatsApp Setup (Free - whatsapp-web.js):');
-            console.log('1. Visit: http://localhost:3000/qr to see the QR code in your browser');
-            console.log('2. OR, a QR code will also be displayed in the terminal below');
+            console.log('1. QR code will be displayed in the terminal below');
+            console.log('2. OR visit: http://localhost:3000/qr for plain text QR code');
             console.log('3. Open WhatsApp on your phone and go to Settings > Linked Devices');
             console.log('4. Tap "Link a Device" and scan the QR code');
             console.log('5. Once connected, you can send messages to your WhatsApp number to test');
